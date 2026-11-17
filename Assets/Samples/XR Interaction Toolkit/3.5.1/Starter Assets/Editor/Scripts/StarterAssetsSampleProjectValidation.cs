@@ -1,14 +1,15 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using TMPro;
 using Unity.XR.CoreUtils.Editor;
 using UnityEditor.PackageManager;
 using UnityEditor.PackageManager.Requests;
 using UnityEngine;
-using UnityEngine.InputSystem;
 using UnityEngine.XR.Interaction.Toolkit;
+
+#if UNITY_INPUT_SYSTEM_PROJECT_WIDE_ACTIONS
+using UnityEngine.InputSystem;
+#endif
 
 namespace UnityEditor.XR.Interaction.Toolkit.Samples
 {
@@ -23,10 +24,12 @@ namespace UnityEditor.XR.Interaction.Toolkit.Samples
         const int k_TeleportLayerIndex = 31;
         const string k_ProjectValidationSettingsPath = "Project/XR Plug-in Management/Project Validation";
         const string k_ShaderGraphPackageName = "com.unity.shadergraph";
+#if UNITY_INPUT_SYSTEM_PROJECT_WIDE_ACTIONS
         const string k_InputSystemPackageName = "com.unity.inputsystem";
         static readonly PackageVersion s_RecommendedPackageVersion = new PackageVersion("1.11.0");
         const string k_InputActionAssetName = "XRI Default Input Actions";
         const string k_InputActionAssetGuid = "c348712bda248c246b8c49b3db54643f";
+#endif
 
         static readonly BuildTargetGroup[] s_BuildTargetGroups =
             ((BuildTargetGroup[])Enum.GetValues(typeof(BuildTargetGroup))).Distinct().ToArray();
@@ -34,7 +37,9 @@ namespace UnityEditor.XR.Interaction.Toolkit.Samples
         static readonly List<BuildValidationRule> s_BuildValidationRules = new List<BuildValidationRule>();
 
         static AddRequest s_ShaderGraphPackageAddRequest;
+#if UNITY_INPUT_SYSTEM_PROJECT_WIDE_ACTIONS
         static AddRequest s_InputSystemPackageAddRequest;
+#endif
 
         [InitializeOnLoadMethod]
         static void RegisterProjectValidationRules()
@@ -86,6 +91,7 @@ namespace UnityEditor.XR.Interaction.Toolkit.Samples
                         Error = false,
                     });
 
+#if UNITY_INPUT_SYSTEM_PROJECT_WIDE_ACTIONS
                 s_BuildValidationRules.Add(
                     new BuildValidationRule
                     {
@@ -102,18 +108,7 @@ namespace UnityEditor.XR.Interaction.Toolkit.Samples
                         FixItAutomatic = true,
                         Error = InputSystem.actions != null && (InputSystem.actions.name == k_InputActionAssetName || AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(InputSystem.actions)) == k_InputActionAssetGuid),
                     });
-
-                s_BuildValidationRules.Add(
-                    new BuildValidationRule
-                    {
-                        Message = $"[{k_StarterAssetsSampleName}] TextMesh Pro - TMP Essentials must be installed for this sample.",
-                        HelpText = "Can be installed using Window > TextMeshPro > Import TMP Essential Resources or by clicking this Edit button and then Import TMP Essentials in the window that appears.",
-                        Category = k_Category,
-                        CheckPredicate = () => TextMeshProEssentialsInstalled(),
-                        FixIt = () => TMP_PackageResourceImporterWindow.ShowPackageImporterWindow(),
-                        FixItAutomatic = false,
-                        Error = true,
-                    });
+#endif
             }
 
             foreach (var buildTargetGroup in s_BuildTargetGroups)
@@ -146,13 +141,6 @@ namespace UnityEditor.XR.Interaction.Toolkit.Samples
             };
         }
 
-        static bool TextMeshProEssentialsInstalled()
-        {
-            // Matches logic in Project Settings window, see TMP_PackageResourceImporter.cs.
-            // For simplicity, we don't also copy the check if the asset needs to be updated.
-            return File.Exists("Assets/TextMesh Pro/Resources/TMP Settings.asset");
-        }
-
         static bool IsInteractionLayerTeleport()
         {
             return string.Equals(InteractionLayerSettings.Instance.GetLayerNameAt(k_TeleportLayerIndex), k_TeleportLayerName, StringComparison.OrdinalIgnoreCase);
@@ -167,6 +155,7 @@ namespace UnityEditor.XR.Interaction.Toolkit.Samples
                 "Cancel");
         }
 
+#if UNITY_INPUT_SYSTEM_PROJECT_WIDE_ACTIONS
         static void InstallOrUpdateInputSystem()
         {
             // Set a 3-second timeout for request to avoid editor lockup
@@ -185,7 +174,11 @@ namespace UnityEditor.XR.Interaction.Toolkit.Samples
             if (request.Status == StatusCode.Success && request.Result.Length > 0)
             {
                 var versions = request.Result[0].versions;
+#if UNITY_2022_2_OR_NEWER
                 var recommendedVersion = new PackageVersion(versions.recommended);
+#else
+                var recommendedVersion = new PackageVersion(versions.verified);
+#endif
                 var latestCompatible = new PackageVersion(versions.latestCompatible);
                 if (recommendedVersion < s_RecommendedPackageVersion && s_RecommendedPackageVersion <= latestCompatible)
                     addRequest = $"{k_InputSystemPackageName}@{s_RecommendedPackageVersion}";
@@ -197,5 +190,6 @@ namespace UnityEditor.XR.Interaction.Toolkit.Samples
                 Debug.LogError($"Package installation error: {s_InputSystemPackageAddRequest.Error}: {s_InputSystemPackageAddRequest.Error.message}");
             }
         }
+#endif
     }
 }

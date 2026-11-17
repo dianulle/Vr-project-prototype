@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using UnityEngine.UI;
 using UnityEngine.Assertions;
 using UnityEngine.InputSystem;
@@ -106,16 +105,7 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.InteractionSimulator
         [Header("Hand Action Panels")]
 
         [SerializeField]
-        GameObject m_LeftHandHighlightPanel;
-
-        [SerializeField]
-        GameObject m_RightHandHighlightPanel;
-
-        [SerializeField]
-        GameObject m_LeftHandActionHighlightPanel;
-
-        [SerializeField]
-        GameObject m_RightHandActionHighlightPanel;
+        GameObject m_HandActionHighlightPanel;
 
         [SerializeField]
         Text m_FirstHandActionText;
@@ -127,6 +117,9 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.InteractionSimulator
         Text m_ThirdHandActionText;
 
         [SerializeField]
+        Text m_FourthHandActionText;
+
+        [SerializeField]
         Text m_FirstHandBindingText;
 
         [SerializeField]
@@ -136,22 +129,7 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.InteractionSimulator
         Text m_ThirdHandBindingText;
 
         [SerializeField]
-        Text m_LeftFirstHandActionText;
-
-        [SerializeField]
-        Text m_LeftSecondHandActionText;
-
-        [SerializeField]
-        Text m_LeftThirdHandActionText;
-
-        [SerializeField]
-        Text m_LeftFirstHandBindingText;
-
-        [SerializeField]
-        Text m_LeftSecondHandBindingText;
-
-        [SerializeField]
-        Text m_LeftThirdHandBindingText;
+        Text m_FourthHandBindingText;
 
         [SerializeField]
         GameObject m_FirstHandBindingGO;
@@ -163,13 +141,7 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.InteractionSimulator
         GameObject m_ThirdHandBindingGO;
 
         [SerializeField]
-        GameObject m_LeftFirstHandBindingGO;
-
-        [SerializeField]
-        GameObject m_LeftSecondHandBindingGO;
-
-        [SerializeField]
-        GameObject m_LeftThirdHandBindingGO;
+        GameObject m_FourthHandBindingGO;
 
         [Header("Hand UI")]
         [SerializeField]
@@ -187,36 +159,58 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.InteractionSimulator
         [SerializeField]
         GameObject m_InputMenuHandVisualizerWarningPanel;
 
+        [SerializeField]
+        GameObject m_HandMenuHandVisualizerWarningPanel;
+
         XRInteractionSimulator m_Simulator;
-        SimulatedHandPlaybackManager m_HandPlaybackManager;
+        SimulatedDeviceLifecycleManager m_DeviceLifecycleManager;
+        SimulatedHandExpressionManager m_HandExpressionManager;
 
-        Dictionary<ControllerInputMode, GameObject> m_ControllerInputRow = new Dictionary<ControllerInputMode, GameObject>();
-        Dictionary<SimulatedHandExpression, GameObject> m_LeftHandExpressionRow = new Dictionary<SimulatedHandExpression, GameObject>();
-        Dictionary<SimulatedHandExpression, GameObject> m_RightHandExpressionRow = new Dictionary<SimulatedHandExpression, GameObject>();
+        SimulatedDeviceLifecycleManager.DeviceMode m_PreviousDeviceMode = SimulatedDeviceLifecycleManager.DeviceMode.None;
+        TargetedDevices m_PreviousTargetedDeviceInput = TargetedDevices.None;
+        ControllerInputMode m_PreviousControllerInputMode = ControllerInputMode.None;
+        SimulatedHandExpression m_PreviousHandExpression = new SimulatedHandExpression();
 
+        int m_ControllerActionIndex = -1;
+        int m_HandActionIndex = -1;
+        int m_QuickActionHandExpressionLength;
+        int[] m_HandExpressionIndices = { -1, -1, -1, -1 };
         bool m_PreviousControllerMenuState;
         bool m_PreviousHandMenuState;
 
         static readonly Color k_DisabledColor = new Color(0x70 / 255f, 0x70 / 255f, 0x70 / 255f);
-
-        const string k_HandsPackageMissingWarning = "Install XR Hands 1.8.0+ to enable Hands.";
-        const string k_HandsPackageUpdateWarning = "Update XR Hands to 1.8.0+ to enable Hands.";
 
         /// <summary>
         /// See <see cref="MonoBehaviour"/>.
         /// </summary>
         protected void Start()
         {
-            if (!ComponentLocatorUtility<XRInteractionSimulator>.TryFindComponent(out m_Simulator))
+#if UNITY_6000_4_OR_NEWER
+            var simulator = FindAnyObjectByType<XRInteractionSimulator>();
+#else
+            var simulator = Object.FindFirstObjectByType<XRInteractionSimulator>();
+#endif
+            if (simulator != null)
+            {
+                m_Simulator = simulator;
+            }
+            else
             {
                 Debug.LogError($"Could not find the XRInteractionSimulator component, disabling simulator UI.", this);
                 gameObject.SetActive(false);
                 return;
             }
 
-            if (!ComponentLocatorUtility<SimulatedHandPlaybackManager>.TryFindComponent(out m_HandPlaybackManager))
+            if (!m_Simulator.gameObject.TryGetComponent(out m_DeviceLifecycleManager))
             {
-                Debug.LogError($"Could not find SimulatedHandPlaybackManager component in the scene, disabling simulator UI.", this);
+                Debug.LogError($"Could not find SimulatedDeviceLifecycleManager component on {m_Simulator.name}, disabling simulator UI.", this);
+                gameObject.SetActive(false);
+                return;
+            }
+
+            if (!m_Simulator.gameObject.TryGetComponent(out m_HandExpressionManager))
+            {
+                Debug.LogError($"Could not find SimulatedHandExpressionManager component on {m_Simulator.name}, disabling simulator UI.", this);
                 gameObject.SetActive(false);
                 return;
             }
@@ -224,30 +218,17 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.InteractionSimulator
             InitializeQuickActionPanels();
 
 #if XR_HANDS_1_1_OR_NEWER
-#if !XR_HANDS_1_8_OR_NEWER
-            SetHandPackageWarning(k_HandsPackageUpdateWarning);
-#else
             CheckInputModalityManager();
-#endif
 #else
-            SetHandPackageWarning(k_HandsPackageMissingWarning);
+            m_HandPackageWarningPanel.SetActive(true);
+            m_LeftHandIcon.color = k_DisabledColor;
+            m_RightHandIcon.color = k_DisabledColor;
 #endif
 
 #if XR_HANDS_1_2_OR_NEWER
             if (!m_HandPackageWarningPanel.activeSelf && !m_InputModalityManagerWarningPanel.activeSelf)
                 CheckHandVisualizer();
 #endif
-        }
-
-        void SetHandPackageWarning(string message)
-        {
-            m_HandPackageWarningPanel.SetActive(true);
-            m_LeftHandIcon.color = k_DisabledColor;
-            m_RightHandIcon.color = k_DisabledColor;
-
-            var warningText = m_HandPackageWarningPanel.GetComponentInChildren<Text>();
-            if (warningText != null)
-                warningText.text = message;
         }
 
         void CheckInputModalityManager()
@@ -270,14 +251,15 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.InteractionSimulator
                     return;
 
                 if ((inputModalityManager.leftHand != null &&
-                        inputModalityManager.leftHand.GetComponentInChildren<XRHandMeshController>(true) != null) ||
+                        inputModalityManager.leftHand.GetComponentInChildren<XRHandMeshController>() != null) ||
                     (inputModalityManager.rightHand != null &&
-                        inputModalityManager.rightHand.GetComponentInChildren<XRHandMeshController>(true) != null))
+                        inputModalityManager.rightHand.GetComponentInChildren<XRHandMeshController>() != null))
                 {
                     return;
                 }
 
                 m_InputMenuHandVisualizerWarningPanel.SetActive(true);
+                m_HandMenuHandVisualizerWarningPanel.SetActive(true);
             }
         }
 #endif
@@ -290,62 +272,107 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.InteractionSimulator
 
         void InitializeControllerQuickActionPanels()
         {
-            Text[] actionTexts = { m_FirstControllerActionText, m_SecondControllerActionText, m_ThirdControllerActionText, m_FourthControllerActionText };
-            Text[] bindingTexts = { m_FirstControllerBindingText, m_SecondControllerBindingText, m_ThirdControllerBindingText, m_FourthControllerBindingText };
-            GameObject[] bindingGOs = { m_FirstControllerBindingGO, m_SecondControllerBindingGO, m_ThirdControllerBindingGO, m_FourthControllerBindingGO };
-
-            var inputModes = m_Simulator.quickActionControllerInputModes;
-            for (int i = 0; i < actionTexts.Length; i++)
+            var inputModesLength = m_Simulator.quickActionControllerInputModes.Count;
+            if (inputModesLength > 0)
             {
-                if (i < inputModes.Count)
-                {
-                    m_ControllerInputRow[inputModes[i]] = actionTexts[i].gameObject;
-                    GetControllerQuickActionNames(inputModes[i], actionTexts[i], bindingTexts[i]);
-                }
-                else
-                {
-                    actionTexts[i].gameObject.SetActive(false);
-                    bindingGOs[i].SetActive(false);
-                }
+                GetControllerQuickActionNames(m_Simulator.quickActionControllerInputModes[0], m_FirstControllerActionText, m_FirstControllerBindingText);
+            }
+            else
+            {
+                m_FirstControllerActionText.gameObject.SetActive(false);
+                m_FirstControllerBindingGO.SetActive(false);
+            }
+
+            if (inputModesLength > 1)
+            {
+                GetControllerQuickActionNames(m_Simulator.quickActionControllerInputModes[1], m_SecondControllerActionText, m_SecondControllerBindingText);
+            }
+            else
+            {
+                m_SecondControllerActionText.gameObject.SetActive(false);
+                m_SecondControllerBindingGO.SetActive(false);
+            }
+
+            if (inputModesLength > 2)
+            {
+                GetControllerQuickActionNames(m_Simulator.quickActionControllerInputModes[2], m_ThirdControllerActionText, m_ThirdControllerBindingText);
+            }
+            else
+            {
+                m_ThirdControllerActionText.gameObject.SetActive(false);
+                m_ThirdControllerBindingGO.SetActive(false);
+            }
+
+            if (inputModesLength > 3)
+            {
+                GetControllerQuickActionNames(m_Simulator.quickActionControllerInputModes[3], m_FourthControllerActionText, m_FourthControllerBindingText);
+            }
+            else
+            {
+                m_FourthControllerActionText.gameObject.SetActive(false);
+                m_FourthControllerBindingGO.SetActive(false);
             }
         }
 
         void InitializeHandQuickActionPanels()
         {
-            Text[] rightActionTexts = { m_FirstHandActionText, m_SecondHandActionText, m_ThirdHandActionText };
-            Text[] rightBindingTexts = { m_FirstHandBindingText, m_SecondHandBindingText, m_ThirdHandBindingText };
-            GameObject[] rightBindingGOs = { m_FirstHandBindingGO, m_SecondHandBindingGO, m_ThirdHandBindingGO };
-            Text[] leftActionTexts = { m_LeftFirstHandActionText, m_LeftSecondHandActionText, m_LeftThirdHandActionText };
-            Text[] leftBindingTexts = { m_LeftFirstHandBindingText, m_LeftSecondHandBindingText, m_LeftThirdHandBindingText };
-            GameObject[] leftBindingGOs = { m_LeftFirstHandBindingGO, m_LeftSecondHandBindingGO, m_LeftThirdHandBindingGO };
-
-            var quickActions = new List<SimulatedHandExpression>();
-            foreach (var expression in m_HandPlaybackManager.simulatedHandExpressions)
+            for (int i = 0; i < m_HandExpressionManager.simulatedHandExpressions.Count; i++)
             {
-                if (expression.isQuickAction)
-                    quickActions.Add(expression);
+                if (m_HandExpressionManager.simulatedHandExpressions[i].isQuickAction)
+                {
+                    if (m_QuickActionHandExpressionLength < 4)
+                        m_HandExpressionIndices[m_QuickActionHandExpressionLength] = i;
+
+                    m_QuickActionHandExpressionLength++;
+                }
             }
 
-            for (int i = 0; i < rightActionTexts.Length; i++)
+            if (m_QuickActionHandExpressionLength > 0)
             {
-                if (i < quickActions.Count)
-                {
-                    var expression = quickActions[i];
-                    m_RightHandExpressionRow[expression] = rightActionTexts[i].gameObject;
-                    m_LeftHandExpressionRow[expression] = leftActionTexts[i].gameObject;
+                var handExpression = m_HandExpressionManager.simulatedHandExpressions[m_HandExpressionIndices[0]];
+                m_FirstHandActionText.text = handExpression.name;
+                m_FirstHandBindingText.text = GetBindingString(handExpression.toggleInput);
+            }
+            else
+            {
+                m_FirstHandActionText.gameObject.SetActive(false);
+                m_FirstHandBindingGO.SetActive(false);
+            }
 
-                    rightActionTexts[i].text = expression.name;
-                    rightBindingTexts[i].text = GetBindingString(expression.toggleInput);
-                    leftActionTexts[i].text = expression.name;
-                    leftBindingTexts[i].text = GetBindingString(expression.toggleInput);
-                }
-                else
-                {
-                    rightActionTexts[i].gameObject.SetActive(false);
-                    rightBindingGOs[i].SetActive(false);
-                    leftActionTexts[i].gameObject.SetActive(false);
-                    leftBindingGOs[i].SetActive(false);
-                }
+            if (m_QuickActionHandExpressionLength > 1)
+            {
+                var handExpression = m_HandExpressionManager.simulatedHandExpressions[m_HandExpressionIndices[1]];
+                m_SecondHandActionText.text = handExpression.name;
+                m_SecondHandBindingText.text = GetBindingString(handExpression.toggleInput);
+            }
+            else
+            {
+                m_SecondHandActionText.gameObject.SetActive(false);
+                m_SecondHandBindingGO.SetActive(false);
+            }
+
+            if (m_QuickActionHandExpressionLength > 2)
+            {
+                var handExpression = m_HandExpressionManager.simulatedHandExpressions[m_HandExpressionIndices[2]];
+                m_ThirdHandActionText.text = handExpression.name;
+                m_ThirdHandBindingText.text = GetBindingString(handExpression.toggleInput);
+            }
+            else
+            {
+                m_ThirdHandActionText.gameObject.SetActive(false);
+                m_ThirdHandBindingGO.SetActive(false);
+            }
+
+            if (m_QuickActionHandExpressionLength > 3)
+            {
+                var handExpression = m_HandExpressionManager.simulatedHandExpressions[m_HandExpressionIndices[3]];
+                m_FourthHandActionText.text = handExpression.name;
+                m_FourthHandBindingText.text = GetBindingString(handExpression.toggleInput);
+            }
+            else
+            {
+                m_FourthHandActionText.gameObject.SetActive(false);
+                m_FourthHandBindingGO.SetActive(false);
             }
         }
 
@@ -445,9 +472,16 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.InteractionSimulator
         /// </summary>
         public void OpenCloseInputSelectionMenu()
         {
-            bool isOpen = m_InputSelectionMenu.activeSelf;
-            m_InputSelectionMenu.SetActive(!isOpen);
-            m_ClosedInputSelectionMenu.SetActive(isOpen);
+            if (m_InputSelectionMenu.activeSelf)
+            {
+                m_ClosedInputSelectionMenu.SetActive(true);
+                m_InputSelectionMenu.SetActive(false);
+            }
+            else
+            {
+                m_ClosedInputSelectionMenu.SetActive(false);
+                m_InputSelectionMenu.SetActive(true);
+            }
         }
 
         /// <summary>
@@ -455,9 +489,16 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.InteractionSimulator
         /// </summary>
         public void OpenCloseControllerActionsMenu()
         {
-            bool isOpen = m_ControllerActionsMenu.activeSelf;
-            m_ControllerActionsMenu.SetActive(!isOpen);
-            m_ClosedControllerActionsMenu.SetActive(isOpen);
+            if (m_ControllerActionsMenu.activeSelf)
+            {
+                m_ClosedControllerActionsMenu.SetActive(true);
+                m_ControllerActionsMenu.SetActive(false);
+            }
+            else
+            {
+                m_ClosedControllerActionsMenu.SetActive(false);
+                m_ControllerActionsMenu.SetActive(true);
+            }
         }
 
         /// <summary>
@@ -465,22 +506,23 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.InteractionSimulator
         /// </summary>
         public void OpenCloseHandActionsMenu()
         {
-            bool isOpen = m_HandActionsMenu.activeSelf;
-            m_HandActionsMenu.SetActive(!isOpen);
-            m_ClosedHandActionsMenu.SetActive(isOpen);
+            if (m_HandActionsMenu.activeSelf)
+            {
+                m_ClosedHandActionsMenu.SetActive(true);
+                m_HandActionsMenu.SetActive(false);
+            }
+            else
+            {
+                m_ClosedHandActionsMenu.SetActive(false);
+                m_HandActionsMenu.SetActive(true);
+            }
         }
 
         void HandleActiveMenus()
         {
-            var current = m_Simulator.currentState;
-            var previous = m_Simulator.previousState;
-
-            bool deviceModeChanged = current.deviceMode != previous.deviceMode;
-            bool exitedFPS = previous.manipulatingFPS && !current.manipulatingFPS;
-
-            if ((deviceModeChanged || exitedFPS) && !current.manipulatingFPS)
+            if (m_PreviousDeviceMode != m_DeviceLifecycleManager.deviceMode && !m_Simulator.manipulatingFPS)
             {
-                if (current.manipulatingLeftController || current.manipulatingRightController)
+                if (m_Simulator.manipulatingLeftController || m_Simulator.manipulatingRightController)
                 {
                     m_PreviousHandMenuState = m_HandActionsMenu.activeSelf;
                     m_HandActionsMenu.SetActive(false);
@@ -491,7 +533,7 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.InteractionSimulator
                     else
                         m_ClosedControllerActionsMenu.SetActive(true);
                 }
-                else if (current.manipulatingLeftHand || current.manipulatingRightHand)
+                else if (m_Simulator.manipulatingLeftHand || m_Simulator.manipulatingRightHand)
                 {
                     m_PreviousControllerMenuState = m_ControllerActionsMenu.activeSelf;
                     m_ControllerActionsMenu.SetActive(false);
@@ -503,28 +545,29 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.InteractionSimulator
                         m_ClosedHandActionsMenu.SetActive(true);
                 }
 
-                if (current.leftHandExpression == m_HandPlaybackManager.restingHandExpression)
-                    m_LeftHandActionHighlightPanel.SetActive(false);
-                if (current.rightHandExpression == m_HandPlaybackManager.restingHandExpression)
-                    m_RightHandActionHighlightPanel.SetActive(false);
+                m_PreviousDeviceMode = m_DeviceLifecycleManager.deviceMode;
             }
 
-            if (current.manipulatingFPS && !previous.manipulatingFPS)
+            if (m_Simulator.manipulatingFPS && m_PreviousDeviceMode != SimulatedDeviceLifecycleManager.DeviceMode.None)
             {
-                m_PreviousControllerMenuState = m_ControllerActionsMenu.activeSelf;
-                m_PreviousHandMenuState = m_HandActionsMenu.activeSelf;
+                if (m_PreviousDeviceMode == SimulatedDeviceLifecycleManager.DeviceMode.Controller)
+                    m_PreviousControllerMenuState = m_ControllerActionsMenu.activeSelf;
+                else if (m_PreviousDeviceMode == SimulatedDeviceLifecycleManager.DeviceMode.Hand)
+                    m_PreviousHandMenuState = m_HandActionsMenu.activeSelf;
 
                 m_HandActionsMenu.SetActive(false);
                 m_ClosedHandActionsMenu.SetActive(false);
                 m_ControllerActionsMenu.SetActive(false);
                 m_ClosedControllerActionsMenu.SetActive(false);
+
+                m_PreviousDeviceMode = SimulatedDeviceLifecycleManager.DeviceMode.None;
             }
 
-            if (m_ToggleActionMenu.ReadWasPerformedThisFrame() && !current.manipulatingFPS)
+            if (m_ToggleActionMenu.ReadWasPerformedThisFrame())
             {
-                if (current.manipulatingLeftController || current.manipulatingRightController)
+                if (m_Simulator.manipulatingLeftController || m_Simulator.manipulatingRightController)
                     OpenCloseControllerActionsMenu();
-                else if (current.manipulatingLeftHand || current.manipulatingRightHand)
+                else if (m_Simulator.manipulatingLeftHand || m_Simulator.manipulatingRightHand)
                     OpenCloseHandActionsMenu();
             }
 
@@ -534,80 +577,107 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.InteractionSimulator
 
         void HandleHighlightedDevicePanels()
         {
-            var current = m_Simulator.currentState;
-            var previous = m_Simulator.previousState;
-
-            if (current.targetedDeviceInput == previous.targetedDeviceInput && current.deviceMode == previous.deviceMode)
-                return;
-
-            ClearHighlightedDevicePanels();
-
-            if (current.manipulatingFPS)
+            if (m_Simulator.targetedDeviceInput != m_PreviousTargetedDeviceInput || m_PreviousDeviceMode != m_DeviceLifecycleManager.deviceMode)
             {
-                m_HighlightFullBodyPanel.SetActive(true);
-                return;
+                ClearHighlightedDevicePanels();
+
+                if (m_Simulator.manipulatingFPS)
+                {
+                    m_HighlightFullBodyPanel.SetActive(true);
+                    return;
+                }
+
+                if (m_Simulator.manipulatingLeftController)
+                {
+                    m_HighlightLeftControllerPanel.SetActive(true);
+                }
+
+                if (m_Simulator.manipulatingRightController)
+                {
+                    m_HighlightRightControllerPanel.SetActive(true);
+                }
+
+                if (m_Simulator.manipulatingLeftHand)
+                {
+                    m_HighlightLeftHandPanel.SetActive(true);
+                }
+
+                if (m_Simulator.manipulatingRightHand)
+                {
+                    m_HighlightRightHandPanel.SetActive(true);
+                }
+
+                if (m_Simulator.manipulatingHMD)
+                {
+                    m_HighlightHeadPanel.SetActive(true);
+                }
+
+                m_PreviousTargetedDeviceInput = m_Simulator.targetedDeviceInput;
             }
-
-            if (current.manipulatingLeftController)
-                m_HighlightLeftControllerPanel.SetActive(true);
-
-            if (current.manipulatingRightController)
-                m_HighlightRightControllerPanel.SetActive(true);
-
-            if (current.manipulatingLeftHand)
-            {
-                m_HighlightLeftHandPanel.SetActive(true);
-                m_LeftHandHighlightPanel.SetActive(true);
-            }
-
-            if (current.manipulatingRightHand)
-            {
-                m_HighlightRightHandPanel.SetActive(true);
-                m_RightHandHighlightPanel.SetActive(true);
-            }
-
-            if (current.manipulatingHMD)
-                m_HighlightHeadPanel.SetActive(true);
         }
 
         void HandleHighlightedControllerActionPanels()
         {
-            var current = m_Simulator.currentState;
-            var previous = m_Simulator.previousState;
+            if (m_Simulator.controllerInputMode != m_PreviousControllerInputMode)
+            {
+                m_ControllerActionIndex = m_ControllerActionIndex < m_Simulator.quickActionControllerInputModes.Count - 1 ? m_ControllerActionIndex + 1 : 0;
+                m_ControllerActionHighlightPanel.SetActive(true);
 
-            if (current.manipulatingFPS)
-                return;
+                if (m_ControllerActionIndex == 0)
+                {
+                    m_ControllerActionHighlightPanel.transform.position = m_FirstControllerActionText.transform.position;
+                }
+                else if (m_ControllerActionIndex == 1)
+                {
+                    m_ControllerActionHighlightPanel.transform.position = m_SecondControllerActionText.transform.position;
+                }
+                else if (m_ControllerActionIndex == 2)
+                {
+                    m_ControllerActionHighlightPanel.transform.position = m_ThirdControllerActionText.transform.position;
+                }
+                else if (m_ControllerActionIndex == 3)
+                {
+                    m_ControllerActionHighlightPanel.transform.position = m_FourthControllerActionText.transform.position;
+                }
+                else
+                {
+                    m_ControllerActionHighlightPanel.SetActive(false);
+                }
 
-            if (current.currentControllerInputMode == previous.currentControllerInputMode &&
-                current.targetedDeviceInput == previous.targetedDeviceInput &&
-                current.deviceMode == previous.deviceMode)
-                return;
-
-            bool hasPanel = m_ControllerInputRow.ContainsKey(current.currentControllerInputMode);
-            m_ControllerActionHighlightPanel.SetActive(hasPanel);
-
-            if (hasPanel)
-                m_ControllerActionHighlightPanel.transform.position = m_ControllerInputRow[current.currentControllerInputMode].transform.position;
+                m_PreviousControllerInputMode = m_Simulator.controllerInputMode;
+            }
         }
 
         void HandleHighlightedHandActionPanels()
         {
-            var current = m_Simulator.currentState;
-            var previous = m_Simulator.previousState;
+            if (m_Simulator.currentHandExpression != m_PreviousHandExpression)
+            {
+                m_HandActionIndex = m_HandActionIndex < m_QuickActionHandExpressionLength - 1 ? m_HandActionIndex + 1 : 0;
+                m_HandActionHighlightPanel.SetActive(true);
 
-            if (current.leftHandExpression != previous.leftHandExpression)
-                UpdateHandActionHighlight(current.leftHandExpression, m_LeftHandActionHighlightPanel, m_LeftHandExpressionRow);
+                if (m_HandActionIndex == 0)
+                {
+                    m_HandActionHighlightPanel.transform.position = m_FirstHandActionText.transform.position;
+                }
+                else if (m_HandActionIndex == 1)
+                {
+                    m_HandActionHighlightPanel.transform.position = m_SecondHandActionText.transform.position;
+                }
+                else if (m_HandActionIndex == 2)
+                {
+                    m_HandActionHighlightPanel.transform.position = m_ThirdHandActionText.transform.position;
+                }
+                else if (m_HandActionIndex == 3)
+                {
+                    m_HandActionHighlightPanel.transform.position = m_FourthHandActionText.transform.position;
+                }
+                else
+                {
+                    m_HandActionHighlightPanel.SetActive(false);
+                }
 
-            if (current.rightHandExpression != previous.rightHandExpression)
-                UpdateHandActionHighlight(current.rightHandExpression, m_RightHandActionHighlightPanel, m_RightHandExpressionRow);
-        }
-
-        void UpdateHandActionHighlight(SimulatedHandExpression expression, GameObject highlightPanel, Dictionary<SimulatedHandExpression, GameObject> rowDict)
-        {
-            bool hasPanel = expression != m_HandPlaybackManager.restingHandExpression && rowDict.ContainsKey(expression);
-            highlightPanel.SetActive(hasPanel);
-            if (hasPanel)
-                highlightPanel.transform.position = rowDict[expression].transform.position;
+                m_PreviousHandExpression = m_Simulator.currentHandExpression;
+            }
         }
 
         void ClearHighlightedDevicePanels()
@@ -618,8 +688,6 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.InteractionSimulator
             m_HighlightLeftHandPanel.SetActive(false);
             m_HighlightRightHandPanel.SetActive(false);
             m_HighlightHeadPanel.SetActive(false);
-            m_LeftHandHighlightPanel.SetActive(false);
-            m_RightHandHighlightPanel.SetActive(false);
         }
     }
 }

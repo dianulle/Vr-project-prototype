@@ -1,4 +1,4 @@
-using TMPro;
+using UnityEngine.UI;
 
 namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
 {
@@ -9,13 +9,13 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
     public class IncrementUIText : MonoBehaviour
     {
         [SerializeField]
-        [Tooltip("The TextMeshProUGUI component this behavior uses to display the incremented value.")]
-        TextMeshProUGUI m_Text;
+        [Tooltip("The Text component this behavior uses to display the incremented value.")]
+        Text m_Text;
 
         /// <summary>
-        /// The TextMeshProUGUI component this behavior uses to display the incremented value.
+        /// The Text component this behavior uses to display the incremented value.
         /// </summary>
-        public TextMeshProUGUI text
+        public Text text
         {
             get => m_Text;
             set => m_Text = value;
@@ -29,11 +29,11 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
         protected void Awake()
         {
             if (m_Text == null)
-                Debug.LogWarning("Missing required TextMeshProUGUI component reference. Use the Inspector window to assign which TMP component to increment.", this);
+                Debug.LogWarning("Missing required Text component reference. Use the Inspector window to assign which Text component to increment.", this);
         }
 
         /// <summary>
-        /// Increment the string message of the TextMeshProUGUI component.
+        /// Increment the string message of the Text component.
         /// </summary>
         public void IncrementText()
         {
